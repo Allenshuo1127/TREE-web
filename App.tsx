@@ -5,11 +5,17 @@ import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocess
 import * as THREE from 'three';
 import { Overlay } from './components/Overlay';
 import { ArixTree } from './components/ArixTree';
+import { HandController } from './components/HandController';
 import { TreeMorphState } from './types';
 import { COLORS, CONFIG } from './constants';
 
 const App: React.FC = () => {
   const [treeState, setTreeState] = useState<TreeMorphState>(TreeMorphState.SCATTERED);
+  // Store full hand data for physics
+  const [handData, setHandData] = useState<{ rotation: number; x: number; y: number; isDetected: boolean }>({
+    rotation: 0, x: 0, y: 0, isDetected: false
+  });
+  
   const controlsRef = useRef<any>(null);
   const lastInteractionRef = useRef(Date.now());
 
@@ -21,10 +27,31 @@ const App: React.FC = () => {
     );
   };
 
+  const handleHandGesture = (gesture: 'OPEN' | 'CLOSED' | 'NONE') => {
+    if (gesture === 'OPEN') {
+      setTreeState(TreeMorphState.SCATTERED);
+    } else if (gesture === 'CLOSED') {
+      setTreeState(TreeMorphState.TREE_SHAPE);
+    }
+    if (gesture !== 'NONE') {
+      lastInteractionRef.current = Date.now();
+    }
+  };
+
+  const handleHandUpdate = (data: { rotation: number; x: number; y: number; isDetected: boolean }) => {
+    setHandData(data);
+    if (data.isDetected) {
+      lastInteractionRef.current = Date.now();
+    }
+  };
+
   return (
-    <div className="relative w-full h-screen bg-black">
+    <div className="relative w-full h-[100dvh] bg-black">
       {/* 2D UI Overlay */}
       <Overlay currentState={treeState} onToggle={toggleState} />
+      
+      {/* Hand Controller */}
+      <HandController onGesture={handleHandGesture} onHandUpdate={handleHandUpdate} />
 
       {/* 3D Scene */}
       <Canvas
@@ -40,24 +67,23 @@ const App: React.FC = () => {
         <OrbitControls 
           ref={controlsRef}
           enablePan={false} 
-          minPolarAngle={Math.PI / 4} // Allow some top down view
-          maxPolarAngle={Math.PI / 1.2} // Allow some bottom up view
+          minPolarAngle={Math.PI / 4} 
+          maxPolarAngle={Math.PI / 1.2}
           minDistance={15}
           maxDistance={60}
           autoRotate={treeState === TreeMorphState.TREE_SHAPE}
           autoRotateSpeed={0.5}
           dampingFactor={0.05}
-          onStart={() => { lastInteractionRef.current = Date.now() + 999999; }} // Disable timer while dragging
-          onEnd={() => { lastInteractionRef.current = Date.now(); }} // Reset timer on release
+          onStart={() => { lastInteractionRef.current = Date.now() + 999999; }}
+          onEnd={() => { lastInteractionRef.current = Date.now(); }}
         />
 
         {/* Custom Auto-Reset Logic */}
         <ResetHandler controlsRef={controlsRef} treeState={treeState} lastInteractionRef={lastInteractionRef} />
 
-        <Suspense fallback={null}>
-          <Environment preset="city" />
+        {/* Main Scene Content */}
+        <group>
           <ambientLight intensity={0.2} />
-          
           <spotLight 
             position={[20, 20, 10]} 
             angle={0.3} 
@@ -73,10 +99,13 @@ const App: React.FC = () => {
             rotationIntensity={treeState === TreeMorphState.SCATTERED ? 1 : 0} 
             floatIntensity={treeState === TreeMorphState.SCATTERED ? 2 : 0}
           >
-            <ArixTree targetState={treeState} />
+            <ArixTree targetState={treeState} handData={handData} />
           </Float>
-          
-          <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+        </group>
+
+        <Suspense fallback={null}>
+           <Environment preset="city" />
+           <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
         </Suspense>
 
         <EffectComposer enableNormalPass={false}>
@@ -94,18 +123,13 @@ const App: React.FC = () => {
   );
 };
 
-// Extracted internal component to access useFrame
 const ResetHandler = ({ controlsRef, treeState, lastInteractionRef }: any) => {
   useFrame((state, delta) => {
-    // Only active in TREE state
     if (treeState !== TreeMorphState.TREE_SHAPE) return;
 
-    // Check time since last interaction
     const timeSince = Date.now() - lastInteractionRef.current;
     
-    // If > 3 seconds, gently nudge camera Y towards 0 (Vertical Center)
     if (timeSince > 3000) {
-      // Lerp camera Y to 0 for a centered vertical alignment
       const targetY = 0;
       if (Math.abs(state.camera.position.y - targetY) > 0.05) {
         state.camera.position.y = THREE.MathUtils.damp(state.camera.position.y, targetY, 2.0, delta);

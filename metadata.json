@@ -1,5 +1,7 @@
 {
   "name": "Christmas Tree01",
   "description": "A high-fidelity, luxury 3D interactive Christmas tree experience featuring a morphing particle system, cinematic bloom, and an emerald-gold aesthetic.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

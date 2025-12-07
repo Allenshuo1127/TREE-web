@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Float } from '@react-three/drei';
@@ -9,6 +8,7 @@ import { getRandomSpherePoint, getTreePoint, generateRandomRotation, getRandomPa
 
 interface ArixTreeProps {
   targetState: TreeMorphState;
+  handData?: { rotation: number; x: number; y: number; isDetected: boolean };
 }
 
 const dummy = new THREE.Object3D();
@@ -48,7 +48,7 @@ const CustomStar = ({ innerRadius, outerRadius, depth, count, ...props }: any) =
 
 // Snow Particles (Falling white glowing particles)
 const SnowParticles = () => {
-  const count = 6000; 
+  const count = 3000; 
   const meshRef = useRef<THREE.Points>(null);
 
   const [positions, velocities] = useMemo(() => {
@@ -56,18 +56,15 @@ const SnowParticles = () => {
     const vel = new Float32Array(count * 3);
     
     for (let i = 0; i < count; i++) {
-      // Random position in a large cylinder volume
       const r = Math.random() * 40;
       const theta = Math.random() * Math.PI * 2;
-      
       pos[i * 3] = r * Math.cos(theta); // x
-      pos[i * 3 + 1] = Math.random() * 60 - 30; // y: spread vertically
+      pos[i * 3 + 1] = Math.random() * 60 - 30; // y
       pos[i * 3 + 2] = r * Math.sin(theta); // z
       
-      // Fall speed - Reduced speed
-      vel[i * 3] = (Math.random() - 0.5) * 0.5; // drift x
-      vel[i * 3 + 1] = -(Math.random() * 0.05 + 0.05); // fall y
-      vel[i * 3 + 2] = (Math.random() - 0.5) * 0.5; // drift z
+      vel[i * 3] = (Math.random() - 0.5) * 0.5;
+      vel[i * 3 + 1] = -(Math.random() * 0.05 + 0.05);
+      vel[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
     }
     return [pos, vel];
   }, []);
@@ -78,17 +75,12 @@ const SnowParticles = () => {
     const currentPositions = posAttribute.array as Float32Array;
 
     for (let i = 0; i < count; i++) {
-      // Update Y
-      currentPositions[i * 3 + 1] += velocities[i * 3 + 1]; // Fall down
-      
-      // Update X/Z drift
+      currentPositions[i * 3 + 1] += velocities[i * 3 + 1];
       currentPositions[i * 3] += velocities[i * 3];
       currentPositions[i * 3 + 2] += velocities[i * 3 + 2];
 
-      // Respawn at top if too low
       if (currentPositions[i * 3 + 1] < -30) {
         currentPositions[i * 3 + 1] = 30;
-        // Randomize x/z again slightly on respawn for variety
         const r = Math.random() * 40;
         const theta = Math.random() * Math.PI * 2;
         currentPositions[i * 3] = r * Math.cos(theta);
@@ -101,47 +93,29 @@ const SnowParticles = () => {
   return (
     <points ref={meshRef}>
       <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={count}
-          array={positions}
-          itemSize={3}
-        />
+        <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial
-        size={0.15} 
-        color="#ffffff"
-        transparent
-        opacity={0.8}
-        blending={THREE.AdditiveBlending}
-        depthWrite={false}
-        sizeAttenuation={true}
-      />
+      <pointsMaterial size={0.15} color="#ffffff" transparent opacity={0.8} blending={THREE.AdditiveBlending} depthWrite={false} sizeAttenuation={true} />
     </points>
   );
 };
 
-// Ambient Background Particles (Breathing Effect)
+// Ambient Background Particles
 const AmbientParticles = () => {
-  const count = 3500;
+  const count = 2000;
   const meshRef = useRef<THREE.Points>(null);
 
-  const [positions, phases] = useMemo(() => {
+  const [positions] = useMemo(() => {
     const pos = new Float32Array(count * 3);
-    const phase = new Float32Array(count);
-    
     for (let i = 0; i < count; i++) {
       const r = 45 + Math.random() * 45;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      
       pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
       pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
       pos[i * 3 + 2] = r * Math.cos(phi);
-      
-      phase[i] = Math.random() * Math.PI * 2;
     }
-    return [pos, phase];
+    return [pos];
   }, []);
 
   useFrame((state) => {
@@ -155,38 +129,118 @@ const AmbientParticles = () => {
   return (
     <points ref={meshRef}>
       <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={count}
-          array={positions}
-          itemSize={3}
-        />
+        <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial
-        size={0.25}
-        color={COLORS.GOLD_METALLIC}
-        transparent
-        opacity={0.4}
-        blending={THREE.AdditiveBlending}
-        depthWrite={false}
-        sizeAttenuation={true}
-      />
+      <pointsMaterial size={0.25} color={COLORS.GOLD_METALLIC} transparent opacity={0.4} blending={THREE.AdditiveBlending} depthWrite={false} sizeAttenuation={true} />
     </points>
   );
 };
 
-export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
+// Inner Core - Green Gradient Particles that now Scatter
+const InnerCore = ({ targetState, progress }: { targetState: TreeMorphState, progress: number }) => {
+  const count = 2000;
+  const meshRef = useRef<THREE.Points>(null);
+
+  const { treePositions, scatterPositions, colors } = useMemo(() => {
+    const tPos = new Float32Array(count * 3);
+    const sPos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+    
+    const colorTop = new THREE.Color(COLORS.EMERALD_LIGHT);
+    const colorBottom = new THREE.Color(COLORS.EMERALD_DEEP);
+
+    for (let i = 0; i < count; i++) {
+      // Tree Position: Cone Volume
+      const h = Math.random(); 
+      const y = (h * CONFIG.TREE_HEIGHT) - (CONFIG.TREE_HEIGHT / 2);
+      const maxR = Math.pow((1 - h), 1.2) * (CONFIG.TREE_RADIUS * 0.8); // Slightly smaller than main tree
+      const r = Math.random() * maxR;
+      const theta = Math.random() * Math.PI * 2;
+      
+      tPos[i * 3] = r * Math.cos(theta);
+      tPos[i * 3 + 1] = y;
+      tPos[i * 3 + 2] = r * Math.sin(theta);
+
+      // Scatter Position: Sphere Volume
+      const sr = Math.cbrt(Math.random()) * CONFIG.SCATTER_RADIUS;
+      const sTheta = Math.random() * Math.PI * 2;
+      const sPhi = Math.acos(2 * Math.random() - 1);
+      sPos[i * 3] = sr * Math.sin(sPhi) * Math.cos(sTheta);
+      sPos[i * 3 + 1] = sr * Math.sin(sPhi) * Math.sin(sTheta);
+      sPos[i * 3 + 2] = sr * Math.cos(sPhi);
+
+      // Color Gradient
+      const c = colorBottom.clone().lerp(colorTop, h);
+      col[i * 3] = c.r;
+      col[i * 3 + 1] = c.g;
+      col[i * 3 + 2] = c.b;
+    }
+    return { treePositions: tPos, scatterPositions: sPos, colors: col };
+  }, []);
+
+  useFrame(() => {
+    if (!meshRef.current) return;
+    const geometry = meshRef.current.geometry;
+    const posAttr = geometry.attributes.position;
+    
+    // Ease function for morphing
+    const t = progress; 
+    const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+    for (let i = 0; i < count; i++) {
+      const tx = treePositions[i * 3];
+      const ty = treePositions[i * 3 + 1];
+      const tz = treePositions[i * 3 + 2];
+
+      const sx = scatterPositions[i * 3];
+      const sy = scatterPositions[i * 3 + 1];
+      const sz = scatterPositions[i * 3 + 2];
+
+      posAttr.setXYZ(
+        i,
+        THREE.MathUtils.lerp(sx, tx, easeT),
+        THREE.MathUtils.lerp(sy, ty, easeT),
+        THREE.MathUtils.lerp(sz, tz, easeT)
+      );
+    }
+    posAttr.needsUpdate = true;
+    // Fade out slightly when scattered to avoid clutter
+    (meshRef.current.material as THREE.PointsMaterial).opacity = 0.3 + 0.3 * easeT;
+  });
+
+  return (
+    <points ref={meshRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" count={count} array={treePositions} itemSize={3} />
+        <bufferAttribute attach="attributes-color" count={count} array={colors} itemSize={3} />
+      </bufferGeometry>
+      <pointsMaterial 
+        size={0.15} 
+        vertexColors 
+        transparent 
+        opacity={0.6} 
+        blending={THREE.AdditiveBlending} 
+        depthWrite={false}
+      />
+    </points>
+  )
+};
+
+export const ArixTree: React.FC<ArixTreeProps> = ({ targetState, handData }) => {
   const rotatingGroupRef = useRef<THREE.Group>(null);
   const boxRef = useRef<THREE.InstancedMesh>(null);
   const sphereRef = useRef<THREE.InstancedMesh>(null);
   const dodecaRef = useRef<THREE.InstancedMesh>(null);
   const tetraRef = useRef<THREE.InstancedMesh>(null);
   const starRef = useRef<THREE.Group>(null);
+  const parallaxGroupRef = useRef<THREE.Group>(null);
   
   const progress = useRef(0);
-  
-  // Rotation Sequence Logic
   const rotationSequenceStartRef = useRef<number | null>(null);
+  
+  // Physics Refs for Inertia
+  const currentHandRotation = useRef(0);
+  const currentHandPos = useRef({ x: 0, y: 0 });
 
   const layerRefs = {
     box: boxRef,
@@ -195,7 +249,6 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
     tetrahedron: tetraRef
   };
 
-  // Generate Data
   const particles = useMemo(() => {
     const allIndices = Array.from({ length: CONFIG.PARTICLE_COUNT }, (_, i) => i);
     for (let i = allIndices.length - 1; i > 0; i--) {
@@ -209,13 +262,21 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
       return new Array(COUNTS_PER_LAYER).fill(null).map((_, i) => {
         const treeIndex = allIndices[globalIndexPointer++];
         const rotEuler = generateRandomRotation();
+        
+        const treePos = getTreePoint(treeIndex, CONFIG.PARTICLE_COUNT, 0);
+        
+        let scale = 0.15 + Math.random() * 0.35;
+        // Increase scale for bottom boxes (Gifts/Base) - NOW 2.5x (Reduced from 5.0x)
+        if (type === 'box' && treePos.y < -CONFIG.TREE_HEIGHT * 0.35) {
+          scale *= 2.5; 
+        }
+
         return {
           id: i,
           scatterPos: getRandomSpherePoint(CONFIG.SCATTER_RADIUS),
-          treePos: getTreePoint(treeIndex, CONFIG.PARTICLE_COUNT, 0),
-          // We need a mutable current rotation vector for variable speed integration
+          treePos: treePos,
           currentRot: new THREE.Vector3(rotEuler.x, rotEuler.y, rotEuler.z),
-          scale: 0.15 + Math.random() * 0.35,
+          scale: scale,
           color: getRandomPaletteColor(COLORS.PALETTE),
           rotationSpeed: (Math.random() + 0.2) * 1.0
         };
@@ -245,7 +306,28 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
   useFrame((state, delta) => {
     const time = state.clock.elapsedTime;
 
-    // 1. Transition Progress
+    // 1. Hand Control Physics (Inertia)
+    if (handData?.isDetected) {
+      // Smoothly interpolate rotation
+      currentHandRotation.current = THREE.MathUtils.damp(currentHandRotation.current, handData.rotation, 3, delta);
+      // Smoothly interpolate View Position (Parallax)
+      currentHandPos.current.x = THREE.MathUtils.damp(currentHandPos.current.x, handData.x, 2, delta);
+      currentHandPos.current.y = THREE.MathUtils.damp(currentHandPos.current.y, handData.y, 2, delta);
+    } else {
+      // Return to neutral if no hand
+      currentHandRotation.current = THREE.MathUtils.damp(currentHandRotation.current, 0, 2, delta);
+      currentHandPos.current.x = THREE.MathUtils.damp(currentHandPos.current.x, 0, 1, delta);
+      currentHandPos.current.y = THREE.MathUtils.damp(currentHandPos.current.y, 0, 1, delta);
+    }
+
+    // Apply Parallax / Camera Shift to the Container Group
+    if (parallaxGroupRef.current) {
+      // Move the scene slightly opposite to hand to create "looking around" feel
+      parallaxGroupRef.current.rotation.y = currentHandPos.current.x * 0.2; // Pan view horizontally
+      parallaxGroupRef.current.rotation.x = currentHandPos.current.y * 0.1; // Tilt view vertically
+    }
+
+    // 2. Transition Progress
     const target = targetState === TreeMorphState.TREE_SHAPE ? 1 : 0;
     const step = delta * CONFIG.ANIMATION_SPEED;
     
@@ -255,81 +337,53 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
       progress.current = Math.max(progress.current - step, target);
     }
 
-    // Interpolation Ease for Position (Cubic Ease In Out)
-    // We reuse this for the group rotation inertia
     const t = progress.current;
     const easeT = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
-    // Apply 360 rotation to the main group based on EaseT for inertia (Smooth Start/Stop)
+    // 3. Tree Rotation (Base Spin + Hand Spin)
     if (rotatingGroupRef.current) {
-      rotatingGroupRef.current.rotation.y = easeT * Math.PI * 2;
+      let baseRot = easeT * Math.PI * 2;
+      // Add inertial hand rotation
+      rotatingGroupRef.current.rotation.y = baseRot + currentHandRotation.current;
     }
 
-    // 2. Rotation Sequence Logic
-    // If we switch back to TREE mode, reset the sequence
+    // 4. Burst Animation Logic
     if (targetState === TreeMorphState.TREE_SHAPE) {
       rotationSequenceStartRef.current = null;
     }
-
-    // Trigger when entering Scatter State and ALMOST there (progress < 0.25 means > 75% complete scatter)
-    // This creates the effect of speeding up "as it arrives"
     if (targetState === TreeMorphState.SCATTERED && progress.current < 0.25 && rotationSequenceStartRef.current === null) {
       rotationSequenceStartRef.current = time;
     }
-
-    // Calculate speed multiplier based on timeline
     let speedMult = 1.0;
     if (rotationSequenceStartRef.current !== null) {
       const dt = time - rotationSequenceStartRef.current;
-      
-      // Target values
       const NORMAL_SPEED = 1.0;
       const BURST_SPEED = 20.0;
-
       if (dt < 1.0) {
-        // Phase 1: Ramp Up (0 to 1s)
-        // use smoothstep for inertia-like acceleration
-        const tRamp = THREE.MathUtils.smoothstep(dt, 0, 1.0);
-        speedMult = THREE.MathUtils.lerp(NORMAL_SPEED, BURST_SPEED, tRamp);
+        speedMult = THREE.MathUtils.lerp(NORMAL_SPEED, BURST_SPEED, THREE.MathUtils.smoothstep(dt, 0, 1.0));
       } else if (dt < 4.0) {
-        // Phase 2: Hold High Speed (1s to 4s, duration 3s)
         speedMult = BURST_SPEED;
       } else {
-        // Phase 3: Decay (4s onwards) -> Decaying over 2s (4s to 6s)
-        const tDecay = THREE.MathUtils.smoothstep(dt, 4.0, 6.0);
-        speedMult = THREE.MathUtils.lerp(BURST_SPEED, NORMAL_SPEED, tDecay);
+        speedMult = THREE.MathUtils.lerp(BURST_SPEED, NORMAL_SPEED, THREE.MathUtils.smoothstep(dt, 4.0, 6.0));
       }
     }
 
-    // 3. Update Particles
+    // 5. Update Particles
     particles.forEach((layerData, index) => {
       const type = LAYERS[index];
       const ref = layerRefs[type].current;
-      
       if (!ref) return;
 
       layerData.forEach((data, i) => {
-        // Position
         tempVec3.lerpVectors(data.scatterPos, data.treePos, easeT);
-
-        // Noise movement (Only when not in tree shape or strictly transitioning)
         if (t < 0.95) {
           tempVec3.y += Math.sin(time + data.id * 0.1) * 0.1 * (1 - t);
           tempVec3.x += Math.cos(time * 0.5 + data.id) * 0.1 * (1 - t);
         }
-
-        // Variable Speed Rotation Integration
         const currentSpeed = data.rotationSpeed * speedMult;
-        data.currentRot.x += currentSpeed * delta;
-        data.currentRot.y += currentSpeed * delta;
-        data.currentRot.z += currentSpeed * delta;
+        data.currentRot.addScalar(currentSpeed * delta);
 
-        dummy.rotation.set(
-          data.currentRot.x,
-          data.currentRot.y,
-          data.currentRot.z
-        );
-
+        dummy.rotation.set(data.currentRot.x, data.currentRot.y, data.currentRot.z);
         const pulse = 1 + Math.sin(time * 2 + data.id) * 0.1;
         dummy.scale.setScalar(data.scale * pulse);
         dummy.position.copy(tempVec3);
@@ -339,7 +393,6 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
       ref.instanceMatrix.needsUpdate = true;
     });
 
-    // 4. Star Update
     if (starRef.current) {
       starRef.current.position.lerpVectors(starData.scatterPos, starData.treePos, easeT);
       starRef.current.rotation.y = time * 0.5;
@@ -349,20 +402,17 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
   });
 
   const material = (
-    <meshStandardMaterial
-      roughness={0.05} 
-      metalness={1.0} 
-      emissiveIntensity={0.5} 
-      color="#ffffff" 
-    />
+    <meshStandardMaterial roughness={0.05} metalness={1.0} emissiveIntensity={0.5} color="#ffffff" />
   );
 
   return (
-    <group>
+    <group ref={parallaxGroupRef}>
       <AmbientParticles />
       <SnowParticles />
       
       <group ref={rotatingGroupRef}>
+        <InnerCore targetState={targetState} progress={progress.current} />
+        
         <instancedMesh ref={boxRef} args={[undefined, undefined, COUNTS_PER_LAYER]} castShadow receiveShadow>
           <boxGeometry args={[1, 1, 1]} />
           {material}
@@ -385,20 +435,8 @@ export const ArixTree: React.FC<ArixTreeProps> = ({ targetState }) => {
 
         <group ref={starRef}>
            <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-              <CustomStar 
-                innerRadius={1.5 * 0.382} 
-                outerRadius={1.5} 
-                depth={0.4} 
-                count={5} 
-                position={[0,0,0]}
-              >
-                <meshStandardMaterial 
-                  color={COLORS.GOLD_METALLIC} 
-                  emissive="#ffaa00"
-                  emissiveIntensity={6} 
-                  roughness={0.1}
-                  metalness={1}
-                />
+              <CustomStar innerRadius={1.5 * 0.382} outerRadius={1.5} depth={0.4} count={5} position={[0,0,0]}>
+                <meshStandardMaterial color={COLORS.GOLD_METALLIC} emissive="#ffaa00" emissiveIntensity={6} roughness={0.1} metalness={1} />
               </CustomStar>
            </Float>
         </group>
